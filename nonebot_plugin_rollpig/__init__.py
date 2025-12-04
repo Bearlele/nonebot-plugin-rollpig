@@ -14,7 +14,7 @@ from pathlib import Path
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
     name="今天是什么小猪",
-    description="这是一个火车迷也许觉得很好用的铁路机器人工具箱",
+    description="抽取每日属于自己的小猪",
     usage="""
     今日小猪 - 抽取今天属于你的小猪类型
     """,

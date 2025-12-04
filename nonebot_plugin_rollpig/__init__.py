@@ -1,8 +1,14 @@
-from nonebot import on_command
+from nonebot import on_command, require
 from nonebot.plugin import PluginMetadata
 from nonebot.adapters.onebot.v11 import MessageSegment
-from nonebot_plugin_htmlrender import template_to_pic
+
+# 确保依赖插件先被 NoneBot 注册
+require("nonebot_plugin_apscheduler")
+require("nonebot_plugin_htmlrender")
+require("nonebot_plugin_localstore")
+
 from nonebot_plugin_apscheduler import scheduler
+from nonebot_plugin_htmlrender import template_to_pic
 import nonebot_plugin_localstore as store
 
 from nonebot.log import logger

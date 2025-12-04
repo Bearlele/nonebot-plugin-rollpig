@@ -69,7 +69,7 @@ nonebot_plugin_rollpig/
 ├─ resource/
 │   ├─ pig.json
 │   └─ image/
-│       ├─ pig.png
+│       └─ pig.png
 ```
 
 ---

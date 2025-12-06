@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nonebot_plugin_rollpig"
-version = "0.1.6"
+version = "0.1.7"
 description = "每日抽取属于自己的小猪"
 authors = ["Bear_lele <lele2587342146@gmail.com>"]
 license = "MIT"
@@ -18,3 +18,9 @@ nonebot-plugin-localstore = ">=0.7.4"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.nonebot.adapters]
+nonebot-adapter-onebot = [
+    { name = "OneBot V11", module_name = "nonebot.adapters.onebot.v11" }
+]
+"@local" = []

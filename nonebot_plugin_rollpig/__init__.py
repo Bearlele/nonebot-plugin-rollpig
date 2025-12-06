@@ -22,10 +22,11 @@ __plugin_meta__ = PluginMetadata(
     name="今天是什么小猪",
     description="抽取每日属于自己的小猪",
     usage="""
-    今日小猪 - 抽取今天属于你的小猪类型
+    今日小猪 - 抽取今天属于你的小猪
     """,
     type="application",
     homepage="https://github.com/Bearlele/nonebot-plugin-rollpig",
+    supported_adapters={"~onebot.v11"},
 )
 
 # 插件目录

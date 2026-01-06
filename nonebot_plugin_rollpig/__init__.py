@@ -1,11 +1,12 @@
-import json, random, datetime
+import json, random, datetime, asyncio, requests
 from pathlib import Path
 
 from nonebot import on_command, require
 from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
-import requests
+
+pig_images = []
 
 # 确保依赖插件先被 NoneBot 注册
 require("nonebot_plugin_htmlrender")
@@ -20,7 +21,7 @@ __plugin_meta__ = PluginMetadata(
     description="抽取属于自己的小猪",
     usage="""
     今日小猪 - 抽取今天属于你的小猪
-    随机小猪 - 从pighub随机获取一张猪猪图
+    随机小猪 - 从PigHub随机获取一张猪猪图
     """,
     type="application",
     homepage="https://github.com/Bearlele/nonebot-plugin-rollpig",
@@ -41,19 +42,31 @@ roll_pig = on_command("随机小猪", block=True)
 
 @roll_pig.handle()
 async def _(event: Event):
-    try:
-        response = requests.get("https://pighub.top/api/all-images")
-        response.raise_for_status()  # 检查请求是否成功
-        data = response.json()
-        if data and data["images"]:
-            pig = random.choice(data["images"])
-            image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
-            await roll_pig.finish(MessageSegment.image(image_url))
-        else:
-            await roll_pig.finish("没有找到小猪图片")
-    except requests.exceptions.RequestException as e:
-        await roll_pig.finish(f"请求出错：{e}")
+    global pig_images
+    if not pig_images:
+        try:
+            data = await asyncio.to_thread(sync_fetch_pig_data, "https://pighub.top/api/all-images")
+            if data and data.get("images"):
+                pig_images = data["images"]
+                logger.success(f"成功从 PigHub 缓存 {len(pig_images)} 头猪猪")
+            else:
+                logger.warning("PigHub 中找不到猪猪")
+        except requests.exceptions.RequestException as e:
+            logger.error(f"从PigHub中获取猪猪失败: {e}")
+        
+        if not pig_images:
+            await roll_pig.finish("猪圈空荡荡...")
+            return
 
+    pig = random.choice(pig_images)
+    image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
+    await roll_pig.finish(MessageSegment.image(image_url))
+
+def sync_fetch_pig_data(url: str):
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+
+    return response.json()
 
 def load_json(path, default):
     if not path.exists():
@@ -78,7 +91,7 @@ def find_image_file(pig_id: str) -> Path | None:
 # 载入小猪信息
 PIG_LIST = load_json(PIGINFO_PATH, [])
 if not PIG_LIST:
-    logger.error("小猪信息为空或不存在，请检查资源文件！")
+    logger.error("猪圈空荡荡，请检查资源文件！")
 
 # 主函数
 @cmd.handle()

@@ -5,6 +5,7 @@ from nonebot import on_command, require
 from nonebot.adapters.onebot.v11 import Event, MessageSegment
 from nonebot.log import logger
 from nonebot.plugin import PluginMetadata
+import requests
 
 # 确保依赖插件先被 NoneBot 注册
 require("nonebot_plugin_htmlrender")
@@ -19,6 +20,7 @@ __plugin_meta__ = PluginMetadata(
     description="抽取属于自己的小猪",
     usage="""
     今日小猪 - 抽取今天属于你的小猪
+    随机小猪 - 从pighub随机获取一张猪猪图
     """,
     type="application",
     homepage="https://github.com/Bearlele/nonebot-plugin-rollpig",
@@ -34,7 +36,23 @@ RES_DIR = PLUGIN_DIR / "resource"
 # 今日记录
 TODAY_PATH = store.get_plugin_data_file("today.json")
 
-cmd = on_command("今天是什么小猪", aliases={"今日小猪"})
+cmd = on_command("今天是什么小猪", aliases={"今日小猪"}, block=True)
+roll_pig = on_command("随机小猪", block=True)
+
+@roll_pig.handle()
+async def _(event: Event):
+    try:
+        response = requests.get("https://pighub.top/api/all-images")
+        response.raise_for_status()  # 检查请求是否成功
+        data = response.json()
+        if data and data["images"]:
+            pig = random.choice(data["images"])
+            image_url = "https://pighub.top/data/" + pig["thumbnail"].split("/")[-1]
+            await roll_pig.finish(MessageSegment.image(image_url))
+        else:
+            await roll_pig.finish("没有找到小猪图片")
+    except requests.exceptions.RequestException as e:
+        await roll_pig.finish(f"请求出错：{e}")
 
 
 def load_json(path, default):
@@ -56,7 +74,6 @@ def find_image_file(pig_id: str) -> Path | None:
         if file.exists():
             return file
     return None
-
 
 # 载入小猪信息
 PIG_LIST = load_json(PIGINFO_PATH, [])

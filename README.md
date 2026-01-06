@@ -32,6 +32,8 @@ nb plugin install nonebot_plugin_rollpig
 - 重复抽取不会改变结果 🐷  
 - 每天 0 点自动重置 🐖
 
+**随机小猪** - 从PigHub随机获取一张猪猪图 🐖
+
 ---
 
 ### 🐖 新增小猪 🐖

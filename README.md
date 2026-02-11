@@ -3,10 +3,22 @@
         <img src="https://raw.githubusercontent.com/Bearlele/nonebot-plugin-rollpig/refs/heads/main/PigLogo.jpeg" width="310" alt="logo">
     </a>
     <h2>🐖 nonebot-plugin-rollpig 🐖</h2>
-    今天是什么小猪 🐽
+    <p>今天是什么小猪 🐽</p>
 </div>
 
-### 🐖 食用方法 🐖
+---
+
+### ✨ 特性 ✨
+
+*   **今日小猪**: 抽取今天属于你的小猪类型 🐖
+
+*   **随机小猪**: 从 PigHub 随机获取猪猪图 🐖
+
+*   **找猪**: 从 PigHub 模糊搜索猪猪图 🐖
+
+---
+
+### 📦 安装方式 📦
 
 使用 pip 安装：
 
@@ -24,19 +36,24 @@ nb plugin install nonebot_plugin_rollpig
 
 ---
 
-### 🐷 使用 🐷
+### 🕹️ 使用方法 🕹️
 
-**今日小猪** - 抽取今天属于你的小猪类型 🐖
+```
+今日小猪 (今日小猪) - 抽取今天属于你的小猪。
+  用法：今日小猪
 
-- 每个用户每天只能抽取一次 🐽  
-- 重复抽取不会改变结果 🐷  
-- 每天 0 点自动重置 🐖
+随机小猪 (随机小猪) - 从PigHub随机获取一张猪猪图。
+  用法：随机小猪 [数量]
+  [数量]：可选参数，指定要抽取的猪猪数量，默认为 1，最大为 20。
 
-**随机小猪** - 从PigHub随机获取一张猪猪图 🐖
+找猪 (找猪) - 根据关键词查找猪猪。
+  用法：找猪 [关键词]
+  [关键词]：要查找的猪猪的关键词。
+```
 
 ---
 
-### 🐖 新增小猪 🐖
+### 🐷 新增小猪 🐷
 
 插件资源路径：
 
@@ -44,7 +61,7 @@ nb plugin install nonebot_plugin_rollpig
 nonebot_plugin_rollpig/resource
 ```
 
-- **pig.json** 小猪信息，例如：
+*   **pig.json** 小猪信息，例如：
 
 ```json
 [
@@ -57,13 +74,13 @@ nonebot_plugin_rollpig/resource
 ]
 ```
 
-- **image/** 小猪图片  
-    - 图片命名需和信息中的 `id` 一致  
-    - 支持图片类型：`["png", "jpg", "jpeg", "webp", "gif"]`
+*   **image/** 小猪图片
+    *   图片命名需和信息中的 `id` 一致
+    *   支持图片类型：`["png", "jpg", "jpeg", "webp", "gif"]`
 
 ---
 
-### 🐽 目录结构示例 🐽
+### 📂 目录结构示例 📂
 
 ```
 nonebot_plugin_rollpig/
@@ -76,7 +93,15 @@ nonebot_plugin_rollpig/
 
 ---
 
-### 🐖 注意事项 🐖
+### ❗ 注意事项 ❗
 
-- 新增小猪时只需在 `pig.json` 添加对象，并将对应图片放到 `image/` 文件夹即可 🐷  
-- 图片自动按 id 匹配，无需在 JSON 中写图片后缀 🐖  
+*   新增小猪时只需在 `pig.json` 添加对象，并将对应图片放到 `image/` 文件夹即可 🐷
+*   图片自动按 id 匹配，无需在 JSON 中写图片后缀 🐖
+
+---
+
+### 🙏 鸣谢 🙏
+
+*   [NoneBot](https://nonebot.dev/)
+*   [OneBot](https://onebot.dev/)
+*   [PigHub](https://pighub.top/)

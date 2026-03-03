@@ -13,11 +13,13 @@ from nonebot.plugin import PluginMetadata
 from nonebot.adapters import Message
 
 # 确保依赖插件先被 NoneBot 注册
+require("nonebot_plugin_apscheduler")
 require("nonebot_plugin_htmlrender")
 require("nonebot_plugin_localstore")
 
 from nonebot_plugin_htmlrender import template_to_pic
 import nonebot_plugin_localstore as store
+from nonebot_plugin_apscheduler import scheduler
 
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
@@ -50,19 +52,28 @@ RES_DIR = PLUGIN_DIR / "resource"
 TODAY_PATH = store.get_plugin_data_file("today.json")
 
 pig_images = []
-    
+
+async def _refresh_pig_images():
+    global pig_images
+    try:
+        data = await asyncio.to_thread(sync_fetch_pig_data, "https://pighub.top/api/all-images")
+        if data and data.get("images"):
+            pig_images = data["images"]
+            logger.success(f"成功从 PigHub 缓存 {len(pig_images)} 头猪猪")
+        else:
+            logger.warning("PigHub 中找不到猪猪")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"从PigHub中获取猪猪失败: {e}")
+
+@scheduler.scheduled_job("cron", hour=0, minute=0)
+async def refresh_pig_images():
+    await _refresh_pig_images()
+    logger.info("已刷新猪猪缓存")
+
 async def get_pig_images():
     global pig_images
     if not pig_images:
-        try:
-            data = await asyncio.to_thread(sync_fetch_pig_data, "https://pighub.top/api/all-images")
-            if data and data.get("images"):
-                pig_images = data["images"]
-                logger.success(f"成功从 PigHub 缓存 {len(pig_images)} 头猪猪")
-            else:
-                logger.warning("PigHub 中找不到猪猪")
-        except requests.exceptions.RequestException as e:
-            logger.error(f"从PigHub中获取猪猪失败: {e}")
+        await _refresh_pig_images()
     return pig_images
 
 

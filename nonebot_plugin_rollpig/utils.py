@@ -9,6 +9,8 @@ from nonebot.log import logger
 from pydantic import BaseModel
 from nonebot_plugin_localstore import get_plugin_data_file
 
+from .resource_manager import rollpig_resource_manager
+
 PLUGIN_DIR = Path(__file__).parent
 PIGINFO_PATH = PLUGIN_DIR / "resource" / "pig.json"
 IMAGE_DIR = PLUGIN_DIR / "resource" / "image"
@@ -100,11 +102,12 @@ class Pigsty:
 
     def _load_pigsonalities(self):
         """从本地文件加载今日小猪数据"""
-        self.pig_pool = [Pigsonality(**pig) for pig in json.load(PIGINFO_PATH.open(encoding="utf-8"))]
+        pig_json_path = rollpig_resource_manager.get_pig_json_path()
+        self.pig_pool = [Pigsonality(**pig) for pig in json.load(pig_json_path.open(encoding="utf-8"))]
         if not self.pig_pool:
             logger.warning("没有找到今日小猪记录，无法抽取")
         else:
-            logger.info(f"已加载 {len(self.pig_pool)} 条今日小猪记录")
+            logger.info(f"已加载 {len(self.pig_pool)} 条今日小猪记录，资源版本: {rollpig_resource_manager.resource_version}")
 
     async def random_pigs(self, count: int = 1) -> list[PigInfo]:
         if not self.pigs:
@@ -119,10 +122,7 @@ class Pigsty:
     def get_pigsonality_img(self, pig_id: str) -> Path | None:
         pigsonality = next((pig for pig in self.pig_pool if pig.id == pig_id), None)
         if pigsonality:
-            for ext in ("png", "jpg", "jpeg", "gif", "webp"):
-                path = IMAGE_DIR / f"{pigsonality.id}.{ext}"
-                if path.exists():
-                    return path
+            return rollpig_resource_manager.find_image_file(pigsonality.id)
         return None
 
     def get_pigsonality_by_id(self, pig_id: str) -> Pigsonality | None:

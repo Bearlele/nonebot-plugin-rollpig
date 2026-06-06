@@ -1,5 +1,5 @@
 from nonebot.log import logger
-from nonebot import require, get_driver
+from nonebot import require, get_driver, get_plugin_config
 from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 # 确保依赖插件先被 NoneBot 注册
@@ -16,6 +16,8 @@ from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_htmlrender import template_to_pic
 from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, CustomNode, UniMessage, on_alconna
 
+from .config import Config
+from .resource_manager import rollpig_resource_manager
 from .utils import RES_DIR, Pigsonality, pigsty
 
 # 插件配置页
@@ -46,13 +48,40 @@ roll_pig = on_alconna(Alconna("随机小猪", Args["count?", Annotated[int, lamb
 find_pig = on_alconna(
     Alconna("找猪", Args["keyword?", str], Option("-i|--id|id", Args["id?", int])), aliases={"搜猪"}, use_cmd_start=True
 )
+sync_pig_resources = on_alconna(Alconna("同步小猪资源"), aliases={"刷新小猪图鉴"}, use_cmd_start=True)
 
 driver = get_driver()
+config = get_plugin_config(Config)
 
 
 @driver.on_startup
 async def startup():
+    rollpig_resource_manager.reload()
+    if config.rollpig_resource_sync_enabled:
+        try:
+            logger.info(await sync_rollpig_resources(force=False, reload_pool=False))
+        except Exception as error:
+            logger.warning(f"rollpig 云端资源启动同步失败，继续使用当前资源: {error}")
     await pigsty.load_pigsty()
+
+
+async def sync_rollpig_resources(*, force: bool = False, reload_pool: bool = True) -> str:
+    """同步云端小猪资源；成功后可立即刷新内存猪池，失败时保留当前资源。"""
+    result = await rollpig_resource_manager.sync_from_remote(force=force)
+    if result.updated:
+        rollpig_resource_manager.reload()
+        if reload_pool:
+            pigsty._load_pigsonalities()
+    return result.message or "小猪资源同步完成"
+
+
+def get_resource_sync_interval_hours() -> int:
+    """读取资源同步间隔；非法配置回退到 24 小时，避免定时器导入期失败。"""
+    try:
+        return max(1, int(config.rollpig_resource_sync_interval_hours or 24))
+    except Exception as error:
+        logger.warning(f"rollpig_resource_sync_interval_hours 配置非法，已回退到 24 小时: {error}")
+        return 24
 
 
 async def send_rendered_pig(pig_data: Pigsonality):
@@ -145,6 +174,34 @@ async def _(keyword: Match[str], id: Match[int], user: Uninfo):
     await UniMessage.reference(*messages).finish()
 
 
+@sync_pig_resources.handle()
+async def _(user: Uninfo):
+    user_id = str(user.user.id)
+    if user_id not in driver.config.superusers:
+        await UniMessage.text("只有超级用户可以同步小猪资源。").finish()
+
+    try:
+        message = await sync_rollpig_resources(force=True)
+    except Exception as error:
+        logger.error(f"rollpig 小猪资源手动同步失败: {error}")
+        await UniMessage.text(f"小猪资源同步失败：{error}").finish()
+
+    await UniMessage.text(
+        f"{message}\n当前资源版本：{rollpig_resource_manager.resource_version}｜小猪数量：{len(pigsty.pig_pool)}"
+    ).finish()
+
+
 @scheduler.scheduled_job("cron", hour=0, minute=0)
 async def refresh_pigsty():
     await pigsty._refresh_pigsty()
+
+
+@scheduler.scheduled_job("interval", hours=get_resource_sync_interval_hours(), id="rollpig_resource_sync", max_instances=1)
+async def scheduled_sync_pig_resources():
+    if not config.rollpig_resource_sync_enabled:
+        return
+    try:
+        message = await sync_rollpig_resources(force=False)
+        logger.info(message)
+    except Exception as error:
+        logger.warning(f"rollpig 云端资源定时同步失败，继续使用当前资源: {error}")

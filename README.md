@@ -53,6 +53,31 @@ nb plugin install nonebot_plugin_rollpig
 
 ---
 
+### ☁️ 云端资源同步 ☁️
+
+插件默认会从云端同步小猪资源包，用于在不更新插件代码的情况下刷新 `pig.json` 与图片资源。
+
+默认资源地址：
+
+```env
+ROLLPIG_RESOURCE_SYNC_ENABLED=true
+ROLLPIG_RESOURCE_MANIFEST_URL=https://pig.felislab.cc/resources/rollpig/manifest.json
+ROLLPIG_RESOURCE_SYNC_INTERVAL_HOURS=24
+```
+
+如需关闭云端同步，可配置：
+
+```env
+ROLLPIG_RESOURCE_SYNC_ENABLED=false
+```
+
+如需使用自己的资源站点，可将 `ROLLPIG_RESOURCE_MANIFEST_URL` 改为自己的 `manifest.json` 地址。
+同步后的资源会缓存到本地，运行时优先使用本地缓存；云端不可用或资源校验失败时，会回退到插件内置资源。
+
+超级用户可发送 `同步小猪资源` 或 `刷新小猪图鉴` 手动触发同步。
+
+---
+
 ### 🐷 新增小猪 🐷
 
 插件资源路径：

@@ -17,7 +17,8 @@ from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, Cu
 from .config import Config
 from .resource_manager import rollpig_resource_manager
 from .card_renderer import render_pig_card_image
-from .utils import Pigsonality, build_pighub_image_url, pigsty
+from .utils import Pigsonality, pigsty
+from .pighub_service import PIGHUB_REFRESH_INTERVAL_HOURS, build_pighub_image_url, pighub_service
 
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
@@ -62,6 +63,12 @@ async def startup():
         except Exception as error:
             logger.warning(f"rollpig 云端资源启动同步失败，继续使用当前资源: {error}")
     await pigsty.load_pigsty()
+    pighub_service.schedule_startup_refresh()
+
+
+@driver.on_shutdown
+async def shutdown():
+    await pighub_service.shutdown()
 
 
 async def sync_rollpig_resources(*, force: bool = False, reload_pool: bool = True) -> str:
@@ -108,38 +115,46 @@ async def _(user: Uninfo):
 
 @roll_pig.handle()
 async def _(count: Match[int], user: Uninfo):
-    pigs = await pigsty.random_pigs(count.result if count.available else 1)
+    if not await pighub_service.ensure_ready():
+        await roll_pig.finish("连不上 PigHub，请稍后再试。")
+
+    pigs = pighub_service.sample(count.result if count.available else 1)
+    if not pigs:
+        await roll_pig.finish("PigHub 图片索引为空，请稍后再试。")
 
     if len(pigs) == 1:
         pig = pigs[0]
         image_url = build_pighub_image_url(pig)
+        if not image_url:
+            await roll_pig.finish("PigHub 返回了异常图片数据，请稍后再试。")
         await UniMessage.image(url=image_url).finish()
 
     # 多张（合并转发）
     messages = []
     for pig in pigs:
+        title = str(pig.get("title") or "随机小猪")
+        image_id = str(pig.get("id") or "")
         image_url = build_pighub_image_url(pig)
+        if not image_url:
+            continue
         messages.append(
-            CustomNode(name=pig.title, uid=user.user.id, content=f"{pig.title}-{pig.id}" + Image(url=image_url))
+            CustomNode(name=title, uid=user.user.id, content=Text(f"{title}-{image_id}") + Image(url=image_url))
         )
 
+    if not messages:
+        await roll_pig.finish("PigHub 图片数据异常，请稍后再试。")
     await UniMessage.reference(*messages).finish()
 
 
 @find_pig.handle()
 async def _(keyword: Match[str], id: Match[int], user: Uninfo):
-    if not pigsty.pigs:
-        await pigsty._refresh_pigsty()
-    if not pigsty.pigs:
-        await find_pig.finish("猪圈空荡荡...")
+    if not await pighub_service.ensure_ready():
+        await find_pig.finish("连不上 PigHub，请稍后再试。")
 
     if id.available:
-        found_pigs = [pig for pig in pigsty.pigs if pig.id == str(id.result)]
+        found_pigs = pighub_service.search("", image_id=id.result)
     elif keyword.available:
-        kw = keyword.result.lower()
-        found_pigs = [
-            pig for pig in pigsty.pigs if kw in pig.title.lower() or kw in (pig.filename or "").lower()
-        ]
+        found_pigs = pighub_service.search(keyword.result)
     else:
         await find_pig.finish("请输入关键词或图片ID~")
 
@@ -149,14 +164,24 @@ async def _(keyword: Match[str], id: Match[int], user: Uninfo):
     if len(found_pigs) == 1:
         pig = found_pigs[0]
         image_url = build_pighub_image_url(pig)
-        await UniMessage(Text(f"{pig.title}-{pig.id}") + Image(url=image_url)).finish()
+        if not image_url:
+            await find_pig.finish("搜索结果数据异常，请稍后再试。")
+        title = str(pig.get("title") or "未命名小猪")
+        image_id = str(pig.get("id") or "")
+        await UniMessage(Text(f"{title}-{image_id}") + Image(url=image_url)).finish()
 
     messages = []
     for pig in found_pigs[:20]:
+        title = str(pig.get("title") or "未命名小猪")
+        image_id = str(pig.get("id") or "")
         image_url = build_pighub_image_url(pig)
+        if not image_url:
+            continue
         messages.append(
-            CustomNode(name=pig.title, uid=user.user.id, content=f"{pig.title}-{pig.id}" + Image(url=image_url))
+            CustomNode(name=title, uid=user.user.id, content=Text(f"{title}-{image_id}") + Image(url=image_url))
         )
+    if not messages:
+        await find_pig.finish("搜索结果数据异常，请稍后再试。")
     await UniMessage.reference(*messages).finish()
 
 
@@ -177,9 +202,9 @@ async def _(user: Uninfo):
     ).finish()
 
 
-@scheduler.scheduled_job("cron", hour=0, minute=0)
+@scheduler.scheduled_job("interval", hours=PIGHUB_REFRESH_INTERVAL_HOURS, id="rollpig_pighub_refresh", max_instances=1)
 async def refresh_pigsty():
-    await pigsty._refresh_pigsty()
+    await pighub_service.refresh("scheduled")
 
 
 @scheduler.scheduled_job("interval", hours=get_resource_sync_interval_hours(), id="rollpig_resource_sync", max_instances=1)

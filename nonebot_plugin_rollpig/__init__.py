@@ -102,16 +102,7 @@ async def send_rendered_pig(pig_data: Pigsonality):
 @todays_pig.handle()
 async def _(user: Uninfo):
     user_id = str(user.user.id)
-
-    # 读取今日缓存
-    today_cache = pigsty.check_user_record(user_id)
-    if today_cache:
-        if today_pig := pigsty.get_pigsonality_by_id(today_cache.pig_id):
-            await send_rendered_pig(today_pig)
-
-    pig = pigsty.catch_today_pig()
-    await pigsty.save_user_record(user_id, pig.id)
-
+    pig = await pigsty.get_or_catch_today_pig(user_id)
     await send_rendered_pig(pig)
 
 

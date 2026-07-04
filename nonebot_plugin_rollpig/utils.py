@@ -3,6 +3,7 @@ import random
 import asyncio
 from pathlib import Path
 from datetime import datetime
+from typing import Any
 from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
@@ -24,6 +25,17 @@ PIGHUB_API_URLS = (
     "https://pighub.top/api/images?sort=2",
     "https://pighub.top/api/all-images",
 )
+
+
+# ================================ 本地记录工具 ================================ #
+
+
+def _dump_model(model: BaseModel) -> dict[str, Any]:
+    """兼容 Pydantic v1/v2 的模型导出；原版依赖未显式锁定 Pydantic 大版本。"""
+
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
 
 
 # ================================ PigHub 接口兼容 ================================ #
@@ -125,14 +137,23 @@ class Pigsty:
             try:
                 data = json.loads(RECORDS_PATH.read_text(encoding="utf-8"))
                 self.records = {uid: PigRecord(**rec) for uid, rec in data.items()}
-            except json.JSONDecodeError:
+            except Exception as error:
+                logger.warning(f"今日小猪记录读取失败，已使用空记录继续运行: {error}")
                 self.records = {}
 
-    def _save_records(self):
-        RECORDS_PATH.write_text(
-            json.dumps({uid: rec.model_dump() for uid, rec in self.records.items()}, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+    def _sync_save_records(self):
+        """同步原子写记录文件；运行期应通过 _atomic_save_records 放入线程执行。"""
+
+        RECORDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        payload = {uid: _dump_model(rec) for uid, rec in self.records.items()}
+        tmp = RECORDS_PATH.with_suffix(f"{RECORDS_PATH.suffix}.{id(self)}.tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(RECORDS_PATH)
+
+    async def _atomic_save_records(self):
+        """把 JSON 落盘放到线程里，避免同步磁盘 IO 阻塞 NoneBot 事件循环。"""
+
+        await asyncio.to_thread(self._sync_save_records)
 
     def check_user_record(self, user_id: str) -> PigRecord | None:
         record = self.records.get(user_id)
@@ -144,7 +165,27 @@ class Pigsty:
         """保存用户抽取记录"""
         async with self._records_lock:
             self.records[user_id] = PigRecord(pig_id=pig_id, date=datetime.now().strftime("%Y-%m-%d"))
-            self._save_records()
+            await self._atomic_save_records()
+
+    async def get_or_catch_today_pig(self, user_id: str) -> Pigsonality:
+        """
+        原子获取今日小猪。
+
+        检查旧记录、抽取新猪、写入记录必须在同一把锁里完成，避免同一用户并发触发时
+        被抽出两只不同今日小猪。
+        """
+
+        async with self._records_lock:
+            record = self.check_user_record(user_id)
+            if record:
+                today_pig = self.get_pigsonality_by_id(record.pig_id)
+                if today_pig:
+                    return today_pig
+
+            pig = self.catch_today_pig()
+            self.records[user_id] = PigRecord(pig_id=pig.id, date=datetime.now().strftime("%Y-%m-%d"))
+            await self._atomic_save_records()
+            return pig
 
     async def _refresh_pigsty(self):
         """从 PigHub 刷新猪猪数据"""

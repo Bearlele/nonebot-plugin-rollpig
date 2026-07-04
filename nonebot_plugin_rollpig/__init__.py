@@ -4,7 +4,6 @@ from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 # 确保依赖插件先被 NoneBot 注册
 require("nonebot_plugin_apscheduler")
-require("nonebot_plugin_htmlrender")
 require("nonebot_plugin_localstore")
 require("nonebot_plugin_alconna")
 require("nonebot_plugin_uninfo")
@@ -13,12 +12,12 @@ from typing import Annotated
 
 from nonebot_plugin_uninfo import Uninfo
 from nonebot_plugin_apscheduler import scheduler
-from nonebot_plugin_htmlrender import template_to_pic
 from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, CustomNode, UniMessage, on_alconna
 
 from .config import Config
 from .resource_manager import rollpig_resource_manager
-from .utils import RES_DIR, Pigsonality, build_pighub_image_url, pigsty
+from .card_renderer import render_pig_card_image
+from .utils import Pigsonality, build_pighub_image_url, pigsty
 
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
@@ -88,21 +87,15 @@ async def send_rendered_pig(pig_data: Pigsonality):
     avatar_file = pigsty.get_pigsonality_img(pig_data.id)
     if not avatar_file:
         logger.warning(f"未找到图片: {pig_data.id}.*")
-        avatar_uri = ""
-    else:
-        avatar_uri = avatar_file.as_uri()
-    # 渲染 HTML
-    pic = await template_to_pic(
-        template_path=str(RES_DIR),
-        template_name="template.html",
-        templates={
-            "avatar": avatar_uri,
+    render_result = await render_pig_card_image(
+        {
             "name": pig_data.name,
-            "desc": pig_data.description,
+            "description": pig_data.description,
             "analysis": pig_data.analysis,
         },
+        avatar_file,
     )
-    await UniMessage.image(raw=pic).finish()
+    await UniMessage.image(raw=render_result.data).finish()
 
 
 # 命令处理函数

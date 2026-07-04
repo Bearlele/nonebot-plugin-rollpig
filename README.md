@@ -47,7 +47,7 @@ nb plugin install nonebot_plugin_rollpig
   [数量]：可选参数，指定要抽取的猪猪数量，默认为 1，最大为 20。
 
 找猪 (找猪) - 根据关键词查找猪猪。
-  用法：找猪 [关键词]
+  用法：找猪 [关键词] [-i|--id|id 图片ID]
   [关键词]：要查找的猪猪的关键词。
 ```
 
@@ -57,12 +57,23 @@ nb plugin install nonebot_plugin_rollpig
 
 插件默认会从云端同步小猪资源包，用于在不更新插件代码的情况下刷新 `pig.json` 与图片资源。
 
-默认资源地址：
+默认配置：
 
 ```env
+# 是否启用云端资源同步；关闭后只使用插件内置资源和已有本地缓存
 ROLLPIG_RESOURCE_SYNC_ENABLED=true
+
+# 公共资源包 manifest 地址；可替换为自建资源站点
 ROLLPIG_RESOURCE_MANIFEST_URL=https://pig.felislab.cc/resources/rollpig/manifest.json
+
+# 定时同步间隔，单位：小时
 ROLLPIG_RESOURCE_SYNC_INTERVAL_HOURS=24
+
+# 单次同步 HTTP 超时时间，单位：秒
+ROLLPIG_RESOURCE_SYNC_TIMEOUT=10.0
+
+# 单个资源文件大小上限，默认 10 MiB
+ROLLPIG_RESOURCE_MAX_FILE_SIZE=10485760
 ```
 
 如需关闭云端同步，可配置：
@@ -111,6 +122,8 @@ nonebot_plugin_rollpig/resource
 nonebot_plugin_rollpig/
 ├─ __init__.py
 ├─ resource/
+│   ├─ fonts/
+│   │   └─ SourceHanSansSC-Medium.otf
 │   ├─ pig.json
 │   └─ image/
 │       └─ pig.png
@@ -130,3 +143,4 @@ nonebot_plugin_rollpig/
 *   [NoneBot](https://nonebot.dev/)
 *   [OneBot](https://onebot.dev/)
 *   [PigHub](https://pighub.top/)
+*   [Source Han Sans](https://github.com/adobe-fonts/source-han-sans)，内置中文字体，用于改善 Docker / Linux 环境中文渲染。

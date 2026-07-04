@@ -12,3 +12,6 @@ class Config(BaseModel):
     rollpig_resource_sync_interval_hours: int = 24
     rollpig_resource_sync_timeout: float = 10.0
     rollpig_resource_max_file_size: int = 10 * 1024 * 1024
+    # 今日小猪 Pillow 卡片字体；留空时使用插件内置 Source Han Sans SC Medium。
+    # 相对路径按 Bot 工作目录解析，方便 Docker 用户挂载自己的字体文件。
+    rollpig_card_font_path: str | None = None

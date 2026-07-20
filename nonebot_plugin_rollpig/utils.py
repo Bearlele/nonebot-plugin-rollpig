@@ -46,16 +46,33 @@ class PigRecord(BaseModel):
     date: str
 
 
+class PigResourceUnavailableError(RuntimeError):
+    """今日小猪资源不可用；命令层应转换为明确提示，不能静默重抽。"""
+
+
 class Pigsty:
     def __init__(self) -> None:
         self.pigs: list[dict[str, Any]] = []
         self.pig_pool: list[Pigsonality] = []
         self.records: dict[str, PigRecord] = {}
         self._records_lock = asyncio.Lock()
+        self._pig_pool_lock = asyncio.Lock()
 
     async def load_pigsty(self):
-        self._load_pigsonalities()
+        await self.reload_resource_snapshot()
         self._load_records()
+
+    async def reload_resource_snapshot(self) -> None:
+        """原子刷新资源管理器和内存猪池，供启动及后台同步复用。"""
+
+        async with self._pig_pool_lock:
+            await asyncio.to_thread(self._sync_reload_resource_snapshot)
+
+    def _sync_reload_resource_snapshot(self) -> None:
+        """在线程中完成资源校验和猪池替换，避免 JSON/目录 IO 阻塞事件循环。"""
+
+        rollpig_resource_manager.reload()
+        self._load_pigsonalities()
 
     def _load_records(self):
         if RECORDS_PATH.exists():
@@ -102,15 +119,20 @@ class Pigsty:
 
         async with self._records_lock:
             record = self.check_user_record(user_id)
-            if record:
-                today_pig = self.get_pigsonality_by_id(record.pig_id)
-                if today_pig:
-                    return today_pig
+            async with self._pig_pool_lock:
+                if record:
+                    today_pig = self.get_pigsonality_by_id(record.pig_id)
+                    if today_pig:
+                        return today_pig
+                    # 已有 ID 时绝不能用随机猪替代。
+                    logger.warning(f"RollPig 今日形态资源缺失: user={user_id} pig_id={record.pig_id}")
+                    raise PigResourceUnavailableError("已保存的小猪不在当前资源包中")
 
-            pig = self.catch_today_pig()
-            self.records[user_id] = PigRecord(pig_id=pig.id, date=datetime.now().strftime("%Y-%m-%d"))
-            await self._atomic_save_records()
-            return pig
+                pig = self.catch_today_pig()
+                # 选择和落盘保持在同一份资源快照内，避免后台同步刚好移除新抽中的 ID。
+                self.records[user_id] = PigRecord(pig_id=pig.id, date=datetime.now().strftime("%Y-%m-%d"))
+                await self._atomic_save_records()
+                return pig
 
     async def _refresh_pigsty(self):
         """兼容旧调用：真实 PigHub 刷新已迁移到 pighub_service。"""
@@ -120,13 +142,16 @@ class Pigsty:
         await pighub_service.refresh("compat-refresh")
 
     def _load_pigsonalities(self):
-        """从本地文件加载今日小猪数据"""
-        pig_json_path = rollpig_resource_manager.get_pig_json_path()
-        self.pig_pool = [Pigsonality(**pig) for pig in json.load(pig_json_path.open(encoding="utf-8"))]
+        """从当前公有包与全部有效私有 overlay 加载今日小猪数据。"""
+
+        self.pig_pool = [Pigsonality(**pig) for pig in rollpig_resource_manager.get_pig_list()]
         if not self.pig_pool:
             logger.warning("没有找到今日小猪记录，无法抽取")
         else:
-            logger.info(f"已加载 {len(self.pig_pool)} 条今日小猪记录，资源版本: {rollpig_resource_manager.resource_version}")
+            logger.info(
+                f"已加载 {len(self.pig_pool)} 条今日小猪记录，"
+                f"资源版本: {rollpig_resource_manager.resource_version}"
+            )
 
     async def random_pigs(self, count: int = 1) -> list[dict[str, Any]]:
         """兼容旧调用：随机 PigHub 图片由 pighub_service 提供。"""
@@ -139,7 +164,7 @@ class Pigsty:
 
     def catch_today_pig(self) -> Pigsonality:
         if not self.pig_pool:
-            self._load_pigsonalities()
+            raise PigResourceUnavailableError("当前小猪资源池为空")
         return random.choice(self.pig_pool)
 
     def get_pigsonality_img(self, pig_id: str) -> Path | None:

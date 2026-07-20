@@ -1,5 +1,8 @@
+import asyncio
+from contextlib import suppress
+
 from nonebot.log import logger
-from nonebot import require, get_driver, get_plugin_config
+from nonebot import require, get_driver
 from nonebot.plugin import PluginMetadata, inherit_supported_adapters
 
 # 确保依赖插件先被 NoneBot 注册
@@ -14,11 +17,11 @@ from nonebot_plugin_uninfo import Uninfo
 from nonebot_plugin_apscheduler import scheduler
 from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, CustomNode, UniMessage, on_alconna
 
-from .config import Config
+from .config import plugin_config
 from .resource_manager import rollpig_resource_manager
+from .utils import Pigsonality, PigResourceUnavailableError, pigsty
 from .card_renderer import render_pig_card_image, shutdown_card_renderer
-from .utils import Pigsonality, pigsty
-from .pighub_service import PIGHUB_REFRESH_INTERVAL_HOURS, build_pighub_image_url, pighub_service
+from .pighub_service import PIGHUB_REFRESH_INTERVAL_HOURS, pighub_service, build_pighub_image_url
 
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
@@ -51,35 +54,57 @@ find_pig = on_alconna(
 sync_pig_resources = on_alconna(Alconna("同步小猪资源"), aliases={"刷新小猪图鉴"}, use_cmd_start=True)
 
 driver = get_driver()
-config = get_plugin_config(Config)
+config = plugin_config
+background_resource_sync_tasks: set[asyncio.Task[None]] = set()
 
 
 @driver.on_startup
 async def startup():
-    rollpig_resource_manager.reload()
-    if config.rollpig_resource_sync_enabled:
-        try:
-            logger.info(await sync_rollpig_resources(force=False, reload_pool=False))
-        except Exception as error:
-            logger.warning(f"rollpig 云端资源启动同步失败，继续使用当前资源: {error}")
+    # 本地可用资源必须先完成加载；云端检查放到后台，不能拖延 NoneBot 启动。
     await pigsty.load_pigsty()
     pighub_service.schedule_startup_refresh()
+    if config.rollpig_resource_sync_enabled:
+        schedule_background_resource_sync("startup")
 
 
 @driver.on_shutdown
 async def shutdown():
+    # 后台同步可能正在修改 staging；退出前取消并等待，确保清理逻辑有机会执行。
+    for task in list(background_resource_sync_tasks):
+        task.cancel()
+    for task in list(background_resource_sync_tasks):
+        with suppress(asyncio.CancelledError):
+            await task
+    background_resource_sync_tasks.clear()
     await pighub_service.shutdown()
     await shutdown_card_renderer()
 
 
-async def sync_rollpig_resources(*, force: bool = False, reload_pool: bool = True) -> str:
+async def sync_rollpig_resources(*, force: bool = False) -> str:
     """同步云端小猪资源；成功后可立即刷新内存猪池，失败时保留当前资源。"""
+
     result = await rollpig_resource_manager.sync_from_remote(force=force)
     if result.updated:
-        rollpig_resource_manager.reload()
-        if reload_pool:
-            pigsty._load_pigsonalities()
+        await pigsty.reload_resource_snapshot()
     return result.message or "小猪资源同步完成"
+
+
+async def run_background_resource_sync(source: str) -> None:
+    """执行后台资源同步；网络或资源错误只能记日志，不能影响 Bot 主流程。"""
+
+    try:
+        message = await sync_rollpig_resources(force=False)
+        logger.info(f"[小猪资源同步] {source}: {message}")
+    except Exception as error:
+        logger.warning(f"[小猪资源同步] {source} 失败，继续使用当前资源: {error}")
+
+
+def schedule_background_resource_sync(source: str) -> None:
+    """创建并追踪后台同步任务，供 shutdown 统一收束。"""
+
+    task = asyncio.create_task(run_background_resource_sync(source))
+    background_resource_sync_tasks.add(task)
+    task.add_done_callback(background_resource_sync_tasks.discard)
 
 
 def get_resource_sync_interval_hours() -> int:
@@ -110,7 +135,12 @@ async def send_rendered_pig(pig_data: Pigsonality):
 @todays_pig.handle()
 async def _(user: Uninfo):
     user_id = str(user.user.id)
-    pig = await pigsty.get_or_catch_today_pig(user_id)
+    try:
+        pig = await pigsty.get_or_catch_today_pig(user_id)
+    except PigResourceUnavailableError as error:
+        logger.warning(f"RollPig 今日小猪暂不可用: user={user_id}, error={error}")
+        await todays_pig.finish("当前小猪资源异常，请联系管理员检查资源包。")
+        return
     await send_rendered_pig(pig)
 
 
@@ -198,9 +228,7 @@ async def _(user: Uninfo):
         logger.error(f"rollpig 小猪资源手动同步失败: {error}")
         await UniMessage.text(f"小猪资源同步失败：{error}").finish()
 
-    await UniMessage.text(
-        f"{message}\n当前资源版本：{rollpig_resource_manager.resource_version}｜小猪数量：{len(pigsty.pig_pool)}"
-    ).finish()
+    await UniMessage.text(f"📦 小猪资源同步结果\n{message}\n当前可用小猪：{len(pigsty.pig_pool)}").finish()
 
 
 @scheduler.scheduled_job("interval", hours=PIGHUB_REFRESH_INTERVAL_HOURS, id="rollpig_pighub_refresh", max_instances=1)
@@ -208,12 +236,13 @@ async def refresh_pigsty():
     await pighub_service.refresh("scheduled")
 
 
-@scheduler.scheduled_job("interval", hours=get_resource_sync_interval_hours(), id="rollpig_resource_sync", max_instances=1)
+@scheduler.scheduled_job(
+    "interval",
+    hours=get_resource_sync_interval_hours(),
+    id="rollpig_resource_sync",
+    max_instances=1,
+)
 async def scheduled_sync_pig_resources():
     if not config.rollpig_resource_sync_enabled:
         return
-    try:
-        message = await sync_rollpig_resources(force=False)
-        logger.info(message)
-    except Exception as error:
-        logger.warning(f"rollpig 云端资源定时同步失败，继续使用当前资源: {error}")
+    await run_background_resource_sync("interval")

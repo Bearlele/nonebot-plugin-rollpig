@@ -16,7 +16,7 @@ from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, Cu
 
 from .config import Config
 from .resource_manager import rollpig_resource_manager
-from .card_renderer import render_pig_card_image
+from .card_renderer import render_pig_card_image, shutdown_card_renderer
 from .utils import Pigsonality, pigsty
 from .pighub_service import PIGHUB_REFRESH_INTERVAL_HOURS, build_pighub_image_url, pighub_service
 
@@ -69,6 +69,7 @@ async def startup():
 @driver.on_shutdown
 async def shutdown():
     await pighub_service.shutdown()
+    await shutdown_card_renderer()
 
 
 async def sync_rollpig_resources(*, force: bool = False, reload_pool: bool = True) -> str:

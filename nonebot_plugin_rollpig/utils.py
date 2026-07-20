@@ -60,7 +60,9 @@ class Pigsty:
 
     async def load_pigsty(self):
         await self.reload_resource_snapshot()
-        self._load_records()
+        records_pruned = await asyncio.to_thread(self._load_records)
+        if records_pruned:
+            await self._atomic_save_records()
 
     async def reload_resource_snapshot(self) -> None:
         """原子刷新资源管理器和内存猪池，供启动及后台同步复用。"""
@@ -74,14 +76,33 @@ class Pigsty:
         rollpig_resource_manager.reload()
         self._load_pigsonalities()
 
-    def _load_records(self):
+    def _load_records(self) -> bool:
+        """读取当天记录；返回是否清理了过期条目并需要回写。"""
+
+        self.records = {}
         if RECORDS_PATH.exists():
             try:
                 data = json.loads(RECORDS_PATH.read_text(encoding="utf-8"))
-                self.records = {uid: PigRecord(**rec) for uid, rec in data.items()}
+                if not isinstance(data, dict):
+                    raise ValueError("records.json 必须是 object")
+                loaded_records = {uid: PigRecord(**rec) for uid, rec in data.items()}
+                today = datetime.now().strftime("%Y-%m-%d")
+                self.records = {uid: record for uid, record in loaded_records.items() if record.date == today}
+                return len(self.records) != len(loaded_records)
             except Exception as error:
-                logger.warning(f"今日小猪记录读取失败，已使用空记录继续运行: {error}")
-                self.records = {}
+                self._backup_corrupt_records(error)
+        return False
+
+    def _backup_corrupt_records(self, error: Exception) -> None:
+        """隔离损坏记录，防止下一次正常保存把原始故障现场直接覆盖。"""
+
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        backup = RECORDS_PATH.with_name(f"{RECORDS_PATH.stem}.corrupt-{timestamp}{RECORDS_PATH.suffix}")
+        try:
+            RECORDS_PATH.replace(backup)
+            logger.warning(f"今日小猪记录读取失败，已备份坏档并使用空记录: backup={backup}, error={error}")
+        except OSError as backup_error:
+            logger.warning(f"今日小猪记录读取失败且坏档备份失败，已使用空记录: {error}; backup_error={backup_error}")
 
     def _sync_save_records(self):
         """同步原子写记录文件；运行期应通过 _atomic_save_records 放入线程执行。"""

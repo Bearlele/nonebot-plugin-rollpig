@@ -18,7 +18,7 @@ from nonebot_plugin_alconna import Args, Text, Image, Match, Option, Alconna, Cu
 
 from .config import Config
 from .resource_manager import rollpig_resource_manager
-from .utils import RES_DIR, Pigsonality, pigsty
+from .utils import RES_DIR, Pigsonality, build_pighub_image_url, pigsty
 
 # 插件配置页
 __plugin_meta__ = PluginMetadata(
@@ -128,13 +128,13 @@ async def _(count: Match[int], user: Uninfo):
 
     if len(pigs) == 1:
         pig = pigs[0]
-        image_url = "https://pighub.top/data/" + pig.thumbnail.split("/")[-1]
+        image_url = build_pighub_image_url(pig)
         await UniMessage.image(url=image_url).finish()
 
     # 多张（合并转发）
     messages = []
     for pig in pigs:
-        image_url = "https://pighub.top/data/" + pig.thumbnail.split("/")[-1]
+        image_url = build_pighub_image_url(pig)
         messages.append(
             CustomNode(name=pig.title, uid=user.user.id, content=f"{pig.title}-{pig.id}" + Image(url=image_url))
         )
@@ -153,7 +153,9 @@ async def _(keyword: Match[str], id: Match[int], user: Uninfo):
         found_pigs = [pig for pig in pigsty.pigs if pig.id == str(id.result)]
     elif keyword.available:
         kw = keyword.result.lower()
-        found_pigs = [pig for pig in pigsty.pigs if kw in pig.title.lower()]
+        found_pigs = [
+            pig for pig in pigsty.pigs if kw in pig.title.lower() or kw in (pig.filename or "").lower()
+        ]
     else:
         await find_pig.finish("请输入关键词或图片ID~")
 
@@ -162,12 +164,12 @@ async def _(keyword: Match[str], id: Match[int], user: Uninfo):
 
     if len(found_pigs) == 1:
         pig = found_pigs[0]
-        image_url = "https://pighub.top/data/" + pig.thumbnail.split("/")[-1]
+        image_url = build_pighub_image_url(pig)
         await UniMessage(Text(f"{pig.title}-{pig.id}") + Image(url=image_url)).finish()
 
     messages = []
     for pig in found_pigs[:20]:
-        image_url = "https://pighub.top/data/" + pig.thumbnail.split("/")[-1]
+        image_url = build_pighub_image_url(pig)
         messages.append(
             CustomNode(name=pig.title, uid=user.user.id, content=f"{pig.title}-{pig.id}" + Image(url=image_url))
         )

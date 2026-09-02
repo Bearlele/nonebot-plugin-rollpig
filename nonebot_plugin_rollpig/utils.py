@@ -3,6 +3,7 @@ import random
 import asyncio
 from pathlib import Path
 from datetime import datetime
+from urllib.parse import quote, urljoin, urlsplit, urlunsplit
 
 import httpx
 from nonebot.log import logger
@@ -17,6 +18,63 @@ IMAGE_DIR = PLUGIN_DIR / "resource" / "image"
 RES_DIR = PLUGIN_DIR / "resource"
 TODAY_PATH = get_plugin_data_file("today.json")
 RECORDS_PATH = get_plugin_data_file("records.json")
+PIGHUB_ORIGIN = "https://pighub.top/"
+PIGHUB_IMAGE_BASE_URL = urljoin(PIGHUB_ORIGIN, "data/")
+PIGHUB_API_URLS = (
+    "https://pighub.top/api/images?sort=2",
+    "https://pighub.top/api/all-images",
+)
+
+
+# ================================ PigHub 接口兼容 ================================ #
+# PigHub 新接口使用 data[] + image_url，旧接口使用 images[] + thumbnail。
+# 这里统一归一化成 PigInfo，命令层只关心“猪信息”和“最终可发送图片 URL”。
+def _safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _filename_from_url(url: str) -> str:
+    return Path(urlsplit(url).path).name if url else ""
+
+
+def _quote_url_path(url: str) -> str:
+    """只编码 URL path，保留协议、域名、查询参数和已编码的百分号。"""
+    parts = urlsplit(url)
+    return urlunsplit((parts.scheme, parts.netloc, quote(parts.path, safe="/%"), parts.query, parts.fragment))
+
+
+def build_pighub_image_url(pig: "PigInfo") -> str:
+    """生成 PigHub 图片直链；优先使用新接口 image_url，兼容旧接口 thumbnail。"""
+    raw_url = pig.image_url or pig.thumbnail
+    if raw_url:
+        return _quote_url_path(urljoin(PIGHUB_ORIGIN, raw_url))
+
+    # 极少数旧数据可能只有 filename；保留 /data/ 兜底，避免无法发送图片。
+    return _quote_url_path(urljoin(PIGHUB_IMAGE_BASE_URL, pig.filename))
+
+
+def normalize_pighub_pig(raw_pig: dict) -> "PigInfo":
+    """把 PigHub 新旧接口的单条数据归一化成 PigInfo。"""
+    image_url = str(raw_pig.get("image_url") or "")
+    thumbnail = str(raw_pig.get("thumbnail") or image_url)
+    filename = str(raw_pig.get("filename") or _filename_from_url(thumbnail) or _filename_from_url(image_url))
+    image_type = str(raw_pig.get("image_type") or Path(filename).suffix.lstrip("."))
+
+    return PigInfo(
+        id=str(raw_pig.get("id") or ""),
+        title=str(raw_pig.get("title") or filename or raw_pig.get("id") or ""),
+        image_type=image_type,
+        view_count=_safe_int(raw_pig.get("view_count")),
+        download_count=_safe_int(raw_pig.get("download_count")),
+        thumbnail=thumbnail,
+        duration=str(raw_pig.get("duration") or ""),
+        filename=filename,
+        mtime=_safe_int(raw_pig.get("mtime")),
+        image_url=image_url,
+    )
 
 
 class PigInfo(BaseModel):
@@ -24,13 +82,14 @@ class PigInfo(BaseModel):
 
     id: str
     title: str
-    image_type: str
-    view_count: int
-    download_count: int
-    thumbnail: str
-    duration: str
-    filename: str
-    mtime: int
+    image_type: str = ""
+    view_count: int = 0
+    download_count: int = 0
+    thumbnail: str = ""
+    duration: str = ""
+    filename: str = ""
+    mtime: int = 0
+    image_url: str = ""
 
 
 class Pigsonality(BaseModel):
@@ -89,16 +148,25 @@ class Pigsty:
 
     async def _refresh_pigsty(self):
         """从 PigHub 刷新猪猪数据"""
-        url = "https://pighub.top/api/all-images"
         async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.get(url)
-            response.raise_for_status()
-        data = response.json()
-        if data and data.get("images"):
-            self.pigs = [PigInfo(**pig) for pig in data["images"]]
-            logger.success(f"成功从 PigHub 缓存 {len(self.pigs)} 头猪猪")
-        else:
-            logger.warning("PigHub 中找不到猪猪")
+            for url in PIGHUB_API_URLS:
+                try:
+                    response = await client.get(url)
+                    response.raise_for_status()
+                    data = response.json()
+                except (httpx.HTTPError, ValueError) as error:
+                    logger.warning(f"PigHub 接口请求失败，准备尝试下一个接口: {url}，错误: {error}")
+                    continue
+
+                raw_pigs = data.get("data") or data.get("images") or []
+                if raw_pigs:
+                    self.pigs = [normalize_pighub_pig(pig) for pig in raw_pigs]
+                    logger.success(f"成功从 PigHub 缓存 {len(self.pigs)} 头猪猪，接口: {url}")
+                    return
+
+                logger.warning(f"PigHub 接口未返回猪猪列表，准备尝试下一个接口: {url}")
+
+        logger.warning("PigHub 中找不到猪猪")
 
     def _load_pigsonalities(self):
         """从本地文件加载今日小猪数据"""

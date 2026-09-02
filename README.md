@@ -50,7 +50,7 @@ nb plugin install nonebot_plugin_rollpig
   [数量]：可选参数，指定要抽取的猪猪数量，默认为 1，最大为 20。
 
 找猪 (找猪) - 根据关键词查找猪猪。
-  用法：找猪 [关键词]
+  用法：找猪 [关键词] [-i|--id|id 图片ID]
   [关键词]：要查找的猪猪的关键词。
 ```
 
@@ -58,14 +58,31 @@ nb plugin install nonebot_plugin_rollpig
 
 ### ☁️ 云端资源同步 ☁️
 
-插件默认会从云端同步小猪资源包，用于在不更新插件代码的情况下刷新 `pig.json` 与图片资源。
+插件默认会从云端同步小猪资源包，用于在不更新插件代码的情况下刷新 `pig.json` 与图片资源。启动时会先加载已有缓存或内置资源，再在后台检查更新。
 
-默认资源地址：
+默认配置：
 
 ```env
+# 是否启用云端资源同步；关闭后只使用插件内置资源和已有本地缓存
 ROLLPIG_RESOURCE_SYNC_ENABLED=true
+
+# 公共资源包 manifest 地址；可替换为自建资源站点
 ROLLPIG_RESOURCE_MANIFEST_URL=https://pig.felislab.cc/resources/rollpig/manifest.json
+
+# 定时同步间隔，单位：小时
 ROLLPIG_RESOURCE_SYNC_INTERVAL_HOURS=24
+
+# 单次同步 HTTP 超时时间，单位：秒；运行时限制为 1～240
+ROLLPIG_RESOURCE_SYNC_TIMEOUT=10.0
+
+# 单个资源文件大小上限，默认 10 MiB
+ROLLPIG_RESOURCE_MAX_FILE_SIZE=10485760
+
+# 可选私有 overlay 列表，默认不加载；.env 中必须写成单行 JSON
+ROLLPIG_PRIVATE_RESOURCE_MANIFESTS=[]
+
+# 可选卡片字体路径；留空时使用插件内置 Source Han Sans SC Medium
+ROLLPIG_CARD_FONT_PATH=
 ```
 
 如需关闭云端同步，可配置：
@@ -75,9 +92,17 @@ ROLLPIG_RESOURCE_SYNC_ENABLED=false
 ```
 
 如需使用自己的资源站点，可将 `ROLLPIG_RESOURCE_MANIFEST_URL` 改为自己的 `manifest.json` 地址。
-同步后的资源会缓存到本地，运行时优先使用本地缓存；云端不可用或资源校验失败时，会回退到插件内置资源。
+同步后的资源会缓存到本地，运行时优先使用本地缓存。新资源只有在 `pig.json` 非空、字段完整且每只猪都有对应图片时才会激活；云端不可用或资源校验失败时，会继续使用当前缓存或回退到插件内置资源。
 
-超级用户可发送 `同步小猪资源` 或 `刷新小猪图鉴` 手动触发同步。
+如需同时追加多个私有资源包，可在 `.env` 中填写单行 JSON：
+
+```env
+ROLLPIG_PRIVATE_RESOURCE_MANIFESTS=[{"name":"remote-pigs","manifest_url":"https://example.com/rollpig-private/manifest.json","token":"可选 Bearer Token"},{"name":"local-pigs","manifest_url":"D:/rollpig-private/manifest.json"}]
+```
+
+私有包必须在 manifest 中声明 `overlay=true`，并且只能追加公有包及前序私有包中不存在的新 ID。
+
+SUPERUSER可发送 `同步小猪资源` 或 `刷新小猪图鉴` 手动触发同步。
 
 ---
 
@@ -114,6 +139,8 @@ nonebot_plugin_rollpig/resource
 nonebot_plugin_rollpig/
 ├─ __init__.py
 ├─ resource/
+│   ├─ fonts/
+│   │   └─ SourceHanSansSC-Medium.otf
 │   ├─ pig.json
 │   └─ image/
 │       └─ pig.png
@@ -125,6 +152,7 @@ nonebot_plugin_rollpig/
 
 *   新增小猪时只需在 `pig.json` 添加对象，并将对应图片放到 `image/` 文件夹即可 🐷
 *   图片自动按 id 匹配，无需在 JSON 中写图片后缀 🐖
+*   固定小猪卡片会缓存为最终 PNG/GIF 成品，缓存总量限制为 64 MiB，资源、文案或字体变化后会自动失效。
 
 ---
 
@@ -133,3 +161,4 @@ nonebot_plugin_rollpig/
 *   [NoneBot](https://nonebot.dev/)
 *   [OneBot](https://onebot.dev/)
 *   [PigHub](https://pighub.top/)
+*   [Source Han Sans](https://github.com/adobe-fonts/source-han-sans)，内置中文字体，用于改善 Docker / Linux 环境中文渲染。

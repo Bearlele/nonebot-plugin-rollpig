@@ -6,6 +6,9 @@
     <p>今天是什么小猪 🐽</p>
 </div>
 
+> 如果你觉得原版玩法比较单调，可以试试基于本项目开发的增强版本：[Felis2026/nonebot-plugin-rollpig-plus](https://github.com/Felis2026/nonebot-plugin-rollpig-plus)  
+> 继续扩展了图鉴成长、EX Lv.、烤群友、日报、云端资源与多 Bot 同步等能力。
+
 ---
 
 ### ✨ 特性 ✨
